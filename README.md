@@ -32,7 +32,7 @@ Open **Import reports** and either:
   in the database, and exact duplicates are skipped.
 
 The application reads existing reports. It does not run a backtest, place a
-trade, or alter MT5 files. Original CSV/HTML bytes are copied into local storage.
+trade, or alter MT5 files. Original CSV/HTML bytes are archived with each run.
 HTML is parsed as text; uploaded source HTML is offered as a download, not run.
 Exact duplicates are detected using source hashes and explicit import overrides.
 
@@ -133,6 +133,10 @@ Stop the server, then copy the **entire data directory** to back up the database
 and reports together. Data, reports, secrets and the virtual environment are
 excluded from Git. Source code and migrations belong to the repository.
 
+On the hosted Supabase deployment, PostgreSQL also contains the original report
+bytes. Back up that database to retain both records and sources; copying Render's
+temporary filesystem is not a hosted-data backup.
+
 Runs and source reports are preserved; the interface intentionally has no bulk
 delete action. Source hashes and a unique UUID identify every run. Importing a
 different report or explicit settings variation creates a separate run.
@@ -143,65 +147,81 @@ an existing Django account to access results, imports, exports and report files.
 There is no public registration. All authenticated accounts access this one
 workspace; this is not a multi-customer application.
 
-## Deploy on Render
+## Deploy: free Render web app + Supabase PostgreSQL
 
-`render.yaml` defines a Python web service, a Render Postgres database and a 1 GB
-persistent disk for source CSV/HTML reports. Both services use Singapore. The
-configuration uses paid compute plans; review Render's current charges before
-deploying the Blueprint. Preparing or validating the file does not deploy it.
+`render.yaml` defines one free Render web service in Singapore. It creates no
+Render database or persistent disk. Supabase stores the journal and original
+CSV/HTML bytes, so a Render restart does not erase them. Both services remain
+subject to their providers' free-tier limits; Render may sleep when inactive.
 
-1. Push this repository to a private GitHub repository and connect that repository
-   to your Render account. Keep `data/`, `.env` and local secrets out of Git.
-2. Run `render login` and select your workspace. Optionally validate the Blueprint
-   with `render blueprints validate render.yaml`.
-3. In Render, choose **New > Blueprint**, connect the repository and select the
-   branch containing `render.yaml`. Review the resources and charges, then deploy.
-4. The build installs dependencies and collects static assets. The pre-deploy
-   command applies database migrations. Gunicorn starts the application, and
-   `/healthz/` checks database connectivity without exposing any report data.
-5. Open the web service's **Shell** and run `python manage.py createsuperuser` to
-   create your login interactively. Set your password in that shell, not in Git.
+1. Create a Supabase project. Under **Connect**, select **Session pooler** on
+   port **5432** and copy its PostgreSQL connection URL. Replace the password
+   placeholder and percent-encode reserved password characters. Use the exact
+   host and username supplied by Supabase.
+2. Push this repository to a private GitHub repository and connect that repository
+   to Render. Keep `data/`, `.env` and local secrets out of Git.
+3. In Render, choose **New > Blueprint**, select the repository and the branch
+   containing `render.yaml`, and review the free web service before deploying.
+4. Supply the prompted environment values in Render:
+   - `DATABASE_URL`: Supabase's Session pooler PostgreSQL URL.
+   - `DJANGO_SUPERUSER_USERNAME`: the initial website login username.
+   - `DJANGO_SUPERUSER_EMAIL`: your login email.
+   - `DJANGO_SUPERUSER_PASSWORD`: a strong initial login password.
+5. Render generates `DJANGO_SECRET_KEY`. The build installs dependencies and
+   collects static files. At startup, the app prepares its private schema, applies
+   migrations and creates the initial owner only if one does not already exist.
+   These startup steps also work on the free plan, which has no pre-deploy command
+   or interactive service Shell. Existing passwords are not reset on redeploy.
 6. Open the service's HTTPS URL and sign in. Upload matching MT5 CSV/HTML files
    through **Import reports**.
 
-Render supplies `DATABASE_URL` from the database, generates `DJANGO_SECRET_KEY`,
-and sets the service hostname. Report files are stored under `/var/data/reports`
-on the persistent disk. The build and pre-deploy steps do not require disk access;
-the report directory is created at runtime. Files are downloaded through
-authenticated Django views, not exposed as public media URLs. The persistent disk
-limits this service to one instance and causes a brief interruption on redeploy.
+The `forex_backtest` PostgreSQL schema keeps Django's tables separate from
+Supabase's public Data API schema. Do not add it to Supabase's exposed schemas.
+The app uses an encrypted PostgreSQL connection. Report bytes stay in a separate
+`ReportFile` table and are fetched only for source downloads, rather than loaded
+with every dashboard query. Their original names and SHA-256 hashes are retained.
+Files are downloaded through authenticated views, not public media URLs.
 
 The hosted server cannot scan the MT5 folders on your Windows computer. The local
-**Import latest reports** option is hidden and disabled when hosted on Render.
-Continue using it locally, or upload reports to the hosted workspace. No automatic
-synchronization exists between the local and hosted databases.
+**Import latest reports** option is hidden and disabled when hosted. Continue
+using it locally, or upload reports to the hosted workspace. The local SQLite
+journal and hosted Supabase journal are independent; no automatic sync exists.
 
 ### Transfer the existing local workspace
 
-Transfer both the database records and the archived reports to retain original
-run IDs, settings and source downloads. Do this once, into a fresh hosted journal,
-before uploading any new reports there:
+The transfer preserves original run IDs, settings, trades and report downloads.
+Use a fresh Supabase application schema and transfer before importing new reports
+online. Existing Supabase platform tables in other schemas are not changed.
 
-1. Stop the local server and back up the full `data/` directory.
-2. Create `data/deployment/`, then export the journal only:
+1. Stop the local server and back up the complete `data/` directory.
+2. Apply migrations, copy report bytes into the journal and export it:
 
    ```powershell
+   .\.venv\Scripts\python.exe manage.py migrate
+   .\.venv\Scripts\python.exe manage.py archive_report_files
    .\.venv\Scripts\python.exe manage.py dumpdata journal --indent 2 --output data/deployment/journal.json
    ```
 
-3. Use Render's documented SCP/SFTP transfer to copy `journal.json` to
-   `/var/data/journal.json` and copy the contents of local `data/reports/` to
-   `/var/data/reports/`, preserving the UUID subdirectories and filenames.
-4. In the Render service Shell, confirm the hosted journal has no runs yet, then
-   run `python manage.py loaddata /var/data/journal.json`. This imports journal
-   records only; the hosted login is created independently.
-5. Compare run/trade counts and original report downloads before switching to the
-   hosted workspace. Keep the local backup until the transfer is confirmed.
+   Create `data/deployment/` first. This JSON is private data, excluded from Git.
+   The archive command checks source hashes and preserves filesystem originals.
+3. Run the transfer tool locally. It prompts for the Supabase Session pooler URL
+   without displaying it, prepares the schema and imports the private fixture:
+
+   ```powershell
+   .\.venv\Scripts\python.exe tools/transfer_to_postgres.py data/deployment/journal.json
+   ```
+
+   It refuses to import into a journal that already has runs, strategies, trades
+   or archived report files. It never exports the local login or local secret.
+4. Confirm the hosted run/trade counts and original downloads before switching.
+   Keep the local backup until the transfer is confirmed. New local records are
+   not automatically copied after this one-time transfer.
 
 For a custom domain, add it in Render and set `DJANGO_ALLOWED_HOSTS` to its
-hostname. If a separate trusted browser origin is needed, set
-`DJANGO_CSRF_TRUSTED_ORIGINS` to comma-separated HTTPS origins. Production uses
-secure cookies, HTTPS redirects, a fixed environment secret and required login.
+hostname. If needed, set `DJANGO_CSRF_TRUSTED_ORIGINS` to comma-separated HTTPS
+origins. Production uses secure cookies, HTTPS redirects, an environment secret
+and required login. Database-backed file storage is enabled by
+`DJANGO_REPORT_STORAGE=database`; local development still uses filesystem reports.
 
 ## Development
 

@@ -1,4 +1,5 @@
 import os
+import re
 import secrets
 from pathlib import Path
 
@@ -67,17 +68,24 @@ TEMPLATES = [{
 WSGI_APPLICATION = "config.wsgi.application"
 database_url = os.environ.get("DATABASE_URL", "")
 if database_url:
-    DATABASES = {"default": dj_database_url.parse(database_url, conn_max_age=60, conn_health_checks=True)}
+    DATABASES = {"default": dj_database_url.parse(database_url, conn_max_age=60, conn_health_checks=True, ssl_require=IS_RENDER)}
     if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":
         raise ImproperlyConfigured("DATABASE_URL must identify a PostgreSQL database.")
 elif IS_RENDER:
-    raise ImproperlyConfigured("Set DATABASE_URL to the Render Postgres internal connection URL.")
+    raise ImproperlyConfigured("Set DATABASE_URL to your PostgreSQL connection URL.")
 else:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     DATABASES = {"default": {
         "ENGINE": "django.db.backends.sqlite3", "NAME": DATA_DIR / "backtests.sqlite3",
         "OPTIONS": {"timeout": 30},
     }}
+DATABASE_SCHEMA = os.environ.get("DJANGO_DB_SCHEMA", "")
+if DATABASE_SCHEMA:
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", DATABASE_SCHEMA):
+        raise ImproperlyConfigured("DJANGO_DB_SCHEMA must be a lowercase PostgreSQL identifier.")
+    if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":
+        raise ImproperlyConfigured("DJANGO_DB_SCHEMA requires PostgreSQL.")
+    DATABASES["default"].setdefault("OPTIONS", {})["options"] = f"-c search_path={DATABASE_SCHEMA}"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "Asia/Kathmandu"
@@ -86,8 +94,11 @@ USE_TZ = False
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+REPORT_STORAGE = os.environ.get("DJANGO_REPORT_STORAGE", "database" if IS_RENDER else "filesystem")
+if REPORT_STORAGE not in {"database", "filesystem"}:
+    raise ImproperlyConfigured("DJANGO_REPORT_STORAGE must be database or filesystem.")
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "default": {"BACKEND": "journal.storage.DatabaseReportStorage" if REPORT_STORAGE == "database" else "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 MEDIA_ROOT = Path(os.environ.get("DJANGO_MEDIA_ROOT", str(DATA_DIR / "reports")))

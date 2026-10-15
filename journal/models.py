@@ -19,6 +19,15 @@ POINT0_LABELS = [(x, x) for x in ("LLP", "HHP", "LLF", "HLF", "LHF", "HHF", "IN"
 DIRECTIONS = [("LONG", "Long"), ("SHORT", "Short"), ("BOTH", "Both"), ("UNKNOWN", "Not recorded")]
 
 
+class ReportFile(models.Model):
+    """Original report bytes kept in PostgreSQL when hosted without a disk."""
+    name = models.CharField(max_length=500, unique=True)
+    content = models.BinaryField()
+    byte_count = models.PositiveBigIntegerField()
+    sha256 = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class StrategyVersion(models.Model):
     name = models.CharField(max_length=160)
     version = models.CharField(max_length=40, default="Not recorded")
