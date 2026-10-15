@@ -1,0 +1,34 @@
+{% load static journal_tags %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{% block title %}Forex Backtest{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'journal/app.css' %}">
+  <script defer src="{% static 'journal/app.js' %}"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <aside class="sidebar">
+    <a class="brand" href="{% url 'dashboard' %}" aria-label="Forex Backtest home"><span class="brand-mark"><i></i><i></i><i></i></span><span>forex<span class="brand-light">backtest</span></span></a>
+    <div class="workspace-label">YOUR WORKSPACE</div>
+    <nav aria-label="Main navigation">
+      <a class="nav-link {% if section == 'runs' %}active{% endif %}" href="{% url 'dashboard' %}"><span class="nav-icon">▦</span>Backtest runs</a>
+      <a class="nav-link {% if section == 'trades' %}active{% endif %}" href="{% url 'trades' %}"><span class="nav-icon">≋</span>Trade ledger</a>
+      <a class="nav-link {% if section == 'strategies' %}active{% endif %}" href="{% url 'strategies' %}"><span class="nav-icon">◇</span>Strategies</a>
+      <a class="nav-link {% if section == 'import' %}active{% endif %}" href="{% url 'import' %}"><span class="nav-icon">↥</span>Import reports</a>
+    </nav>
+    <div class="sidebar-bottom"><span class="status-dot"></span><div>Saved on this computer<small>Local SQLite database</small></div></div>
+  </aside>
+  <div class="app-shell">
+    <header class="topbar"><div><span class="muted">Workspace</span><span class="crumb-slash">/</span>{% block breadcrumb %}Backtest runs{% endblock %}</div><span class="local-label"><span class="status-dot"></span> Local workspace</span></header>
+    <main id="main">
+      {% for message in messages %}<div class="notice {{ message.tags }}" role="status">{{ message }}</div>{% endfor %}
+      {% block content %}{% endblock %}
+      <footer class="page-footer"><span>Forex Backtest</span><span>Win rate uses positive net P/L / all trades, including break-even.</span></footer>
+    </main>
+  </div>
+</body>
+</html>
