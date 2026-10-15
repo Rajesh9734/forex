@@ -36,7 +36,7 @@ Exact duplicates are detected using source hashes and explicit import overrides.
 The optional import fields support older reports and alternative entry techniques
 such as cross-next-open. Missing settings stay unavailable instead of being
 replaced with current strategy defaults. Current supported report families are
-Out Down, Gold LLP Up Sort, and 0 Break (called `0 Out` in MT5).
+Out Down-Up, IN Up-Down, Gold LLP Up Sort, and 0 Break (called `0 Out` in MT5).
 
 Command-line imports:
 
@@ -49,6 +49,7 @@ Command-line imports:
 Set `MT5_REPORTS_DIR` before starting the server to change the Common Files root.
 The importer scans the supported strategy report folders, including cross-entry
 variants and 0 Break Immediate.
+The IN Up-Down cross-entry reports are read from `InUpDownCrossEntryBacktests`.
 
 ## Compare and export
 
@@ -77,6 +78,8 @@ the actual last candle is reported separately.
 - **Point 0 label:** LLP, HHP, LLF, HLF, LHF or HHF is stored per trade. The main
   filter row selects these independently of OUT UP/DOWN and long/short direction.
   Metrics and both CSV exports use the same label-filtered trades.
+  IN Up-Down reports explicitly mark point 0 as `IN`; this reported value is also
+  preserved and available in the point 0 filter.
 - Updated MT5 exports include `Point 0 label` and `Point 0 label candle`, frozen
   when point 3 completes the pattern. `UNRESOLVED` means no label was known then;
   this differs from `Not recorded`, which means the old report omitted the label.

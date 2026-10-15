@@ -17,7 +17,7 @@ from .models import BacktestRun, POINT0_LABELS, StrategyVersion, Trade
 MAX_REPORT_BYTES = 20 * 1024 * 1024
 REPORT_FOLDERS = ("ZeroOutBacktests", "GoldLLPUpSortBacktests", "OutDownCandleBacktests",
                   "ZeroOutCrossEntryBacktests", "GoldLLPCrossEntryBacktests", "OutDownCrossEntryBacktests",
-                  "ZeroBreakImmediateBacktests")
+                  "ZeroBreakImmediateBacktests", "InUpDownCrossEntryBacktests")
 
 
 class ImportProblem(ValueError):
@@ -116,9 +116,10 @@ def point0_details(row):
     allowed = {code for code, _ in POINT0_LABELS}
     label = (row.get("Point 0 label") or row.get("OUT 0 code") or "").strip().upper()
     source = "CSV_COLUMN" if label else ""
-    setup = " | ".join(value for key, value in row.items() if key.startswith("OUT 0 / ") or key.startswith("OUT 0 LLP / "))
+    setup = " | ".join(value for key, value in row.items() if re.match(r"^(?:OUT|IN) 0(?: LLP)? / ", key))
     matches = set(re.findall(r"\bOUT\s+0\s+(?:code|label)\s*:\s*(LLP|HHP|LLF|HLF|LHF|HHF|UNRESOLVED)\b", setup, re.I))
     matches.update(re.findall(r"\bOUT\s+0\s+(LLP|HHP|LLF|HLF|LHF|HHF)\s*:", setup, re.I))
+    matches.update(re.findall(r"\bIN\s+0\s+state\s*:\s*(IN)\b", setup, re.I))
     matches = {code.upper() for code in matches}
     if len(matches) > 1 or (label and matches and matches != {label}):
         raise ImportProblem("Conflicting point 0 labels in the CSV.")
@@ -128,7 +129,7 @@ def point0_details(row):
         raise ImportProblem(f"Unknown point 0 label: {label}.")
     label_time = row.get("Point 0 label candle", "")
     if not label_time:
-        match = re.search(r"\bOUT\s+0\s+label candle:\s*(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2})", setup, re.I)
+        match = re.search(r"\b(?:OUT\s+0\s+label candle|IN\s+0\s+state captured):\s*(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2})", setup, re.I)
         label_time = match.group(1) if match else ""
     return label, timestamp(label_time, "point 0 label candle") if label_time else None, source
 
@@ -137,6 +138,8 @@ def infer_strategy(heading, rows, source_name):
     candidate = " ".join([heading, source_name] + [row.get("Strategy", "") for row in rows[:10]])
     if re.search(r"0\s*break\s*immediate|zerobreakimmediate", candidate, re.I):
         return "0 Break Immediate"
+    if re.search(r"\bin[ _-]+(?:up|down)\b|inupdown", candidate, re.I):
+        return "IN Up-Down"
     if re.search(r"\bout[ _-]+down[-/]up\b", heading, re.I):
         return "Out Down-Up"
     if re.search(r"gold|llp", candidate, re.I):
@@ -152,6 +155,8 @@ def canonical_strategy_name(name):
     value = name.strip()
     if re.fullmatch(r"out\s+down(?:[-/]up)?", value, re.I):
         return "Out Down-Up"
+    if re.fullmatch(r"in\s+(?:up[-/]down|down[-/]up)", value, re.I):
+        return "IN Up-Down"
     return value
 
 
