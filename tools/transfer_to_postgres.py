@@ -12,7 +12,7 @@ def main():
     args = parser.parse_args()
     if not args.fixture.is_file():
         parser.error("The journal fixture does not exist.")
-    database_url = getpass.getpass("Supabase Session pooler PostgreSQL URL (hidden): ").strip()
+    database_url = (os.environ.get("DATABASE_URL") or getpass.getpass("Supabase Session pooler PostgreSQL URL (hidden): ")).strip()
     if not database_url.startswith(("postgres://", "postgresql://")):
         parser.error("Provide a PostgreSQL connection URL.")
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
