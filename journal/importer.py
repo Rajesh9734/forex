@@ -17,7 +17,10 @@ from .models import BacktestRun, POINT0_LABELS, StrategyVersion, Trade
 MAX_REPORT_BYTES = 20 * 1024 * 1024
 REPORT_FOLDERS = ("ZeroOutBacktests", "GoldLLPUpSortBacktests", "OutDownCandleBacktests",
                   "ZeroOutCrossEntryBacktests", "GoldLLPCrossEntryBacktests", "OutDownCrossEntryBacktests",
-                  "ZeroBreakImmediateBacktests", "InUpDownCrossEntryBacktests")
+                  "ZeroBreakImmediateBacktests", "InUpDownCrossEntryBacktests",
+                  "TSZeroOutBacktests", "TSGoldLLPUpSortBacktests", "TSOutDownCandleBacktests",
+                  "TSZeroOutCrossEntryBacktests", "TSGoldLLPCrossEntryBacktests",
+                  "TSOutDownCrossEntryBacktests", "TSInUpDownCrossEntryBacktests")
 
 
 class ImportProblem(ValueError):
@@ -30,8 +33,14 @@ class ReportHTML(HTMLParser):
         self.metadata, self.heading, self.text = {}, "", []
         self.row, self.cell, self.in_heading = [], None, False
         self.heading_parts = []
+        self.partial_headers = None
+        self.partial_rows = []
+        self.partial_table_found = False
+        self.partial_table_incomplete = False
 
     def handle_starttag(self, tag, attrs):
+        if tag == "table":
+            self.partial_headers = None
         if tag == "h1":
             self.in_heading = True
         if tag == "tr":
@@ -55,6 +64,17 @@ class ReportHTML(HTMLParser):
             self.cell = None
         if tag == "tr" and len(self.row) == 2:
             self.metadata[self.row[0]] = self.row[1]
+        if tag == "tr":
+            if {"Lots closed", "Exit price", "Reason", "Net P/L"} <= set(self.row):
+                self.partial_headers = list(self.row)
+                self.partial_table_found = True
+            elif self.partial_headers and self.row:
+                if len(self.row) != len(self.partial_headers):
+                    self.partial_table_incomplete = True
+                else:
+                    self.partial_rows.append(dict(zip(self.partial_headers, self.row)))
+        if tag == "table":
+            self.partial_headers = None
 
 
 def decode_report(content):
@@ -153,11 +173,77 @@ def infer_strategy(heading, rows, source_name):
 
 def canonical_strategy_name(name):
     value = name.strip()
+    if re.match(r"^ts\s+", value, re.I):
+        return "ts " + canonical_strategy_name(re.sub(r"^ts\s+", "", value, flags=re.I))
     if re.fullmatch(r"out\s+down(?:[-/]up)?", value, re.I):
         return "Out Down-Up"
     if re.fullmatch(r"in\s+(?:up[-/]down|down[-/]up)", value, re.I):
         return "IN Up-Down"
     return value
+
+
+def attach_partial_exits(report, trades):
+    """Read the actual half-exits already archived in matching MT5 HTML.
+
+    Store validated records with each trade's existing JSON data so old runs
+    and both SQLite/PostgreSQL installations need no schema migration.
+    """
+    if report.partial_table_incomplete:
+        raise ImportProblem("The HTML partial-exit table is incomplete.")
+    by_number = {trade.number: trade for trade in trades}
+    grouped = {trade.number: [] for trade in trades}
+    for row in report.partial_rows:
+        label = row.get("Exit ID") or row.get("Trade", "")
+        match = re.fullmatch(r"(.+#)?(\d+)-X(\d+)", label)
+        try:
+            trade_number = int(match.group(2) if match else label.lstrip("#"))
+        except ValueError:
+            raise ImportProblem(f"Invalid partial-exit trade ID: {label}.") from None
+        trade = by_number.get(trade_number)
+        if trade is None:
+            raise ImportProblem(f"Partial exit references unknown trade {trade_number}.")
+        parts = grouped[trade_number]
+        sequence = len(parts) + 1
+        if sequence > 2 or (match and int(match.group(3)) != sequence):
+            raise ImportProblem(f"Invalid exit order for trade {trade_number}.")
+        trade_id = trade.raw.get("Trade ID", "").strip()
+        if match and trade_id and label != f"{trade_id}-X{sequence}":
+            raise ImportProblem(f"Partial-exit ID does not match trade {trade_number}.")
+        if row.get("Side") != trade.side:
+            raise ImportProblem(f"Partial-exit side does not match trade {trade_number}.")
+        exit_at = timestamp(row.get("Exit candle"), "partial-exit candle", True)
+        if not trade.entry_at <= exit_at <= trade.exit_at or (parts and exit_at < datetime.fromisoformat(parts[-1]["exit_at"])):
+            raise ImportProblem(f"Partial-exit date is outside trade {trade_number}.")
+        values = {key: number(row.get(column, "").removesuffix("%") if key == "percent" else row.get(column), column, True) for key, column in {
+            "exit_price": "Exit price", "lots": "Lots closed", "percent": "Percent",
+            "gross_profit": "Gross P/L", "commission": "Commission", "net_profit": "Net P/L",
+            "reported_balance": "Balance after part",
+        }.items()}
+        if values["exit_price"] <= 0 or values["lots"] <= 0 or not 0 < values["percent"] <= 100:
+            raise ImportProblem(f"Invalid partial-exit price or size for trade {trade_number}.")
+        if abs(values["gross_profit"] - values["commission"] - values["net_profit"]) > Decimal("0.02"):
+            raise ImportProblem(f"Partial-exit P/L does not reconcile for trade {trade_number}.")
+        parts.append({
+            "number": sequence, "exit_id": label if match else "", "exit_at": exit_at.isoformat(),
+            "reason": row.get("Reason", ""),
+            **{key: str(value) for key, value in values.items()},
+        })
+    for trade in trades:
+        parts = grouped[trade.number]
+        if not parts:
+            raise ImportProblem(f"Missing partial-exit records for trade {trade.number}.")
+        if sum((Decimal(part["percent"]) for part in parts), Decimal("0")) != 100:
+            raise ImportProblem(f"Partial exits do not close all of trade {trade.number}.")
+        if trade.lots is not None and abs(sum((Decimal(part["lots"]) for part in parts), Decimal("0")) - trade.lots) > Decimal("0.00000001"):
+            raise ImportProblem(f"Partial-exit lots do not match trade {trade.number}.")
+        if datetime.fromisoformat(parts[-1]["exit_at"]) != trade.exit_at:
+            raise ImportProblem(f"The final partial exit does not match trade {trade.number}.")
+        rounded_net = sum((Decimal(part["net_profit"]) for part in parts), Decimal("0"))
+        if abs(rounded_net - trade.net_profit) > Decimal("0.02"):
+            raise ImportProblem(f"Partial-exit totals do not match trade {trade.number}.")
+        # Keep reported values intact. Cash-flow metrics allocate any rounding
+        # difference to the final part so they agree with the main trade CSV.
+        trade.raw["_partial_exits"] = parts
 
 
 def read_payload(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=None):
@@ -177,8 +263,11 @@ def read_payload(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=No
     except csv.Error:
         dialect = csv.excel
     reader = csv.DictReader(io.StringIO(text, newline=""), dialect=dialect)
-    required = {"Trade", "Symbol", "Timeframe", "Side", "Entry candle", "Exit candle", "Entry", "Exit", "Net P/L", "Currency"}
-    missing = required - set(reader.fieldnames or [])
+    columns = set(reader.fieldnames or [])
+    required = {"Trade", "Symbol", "Timeframe", "Side", "Entry candle", "Exit candle", "Entry", "Net P/L", "Currency"}
+    missing = required - columns
+    if not {"Exit", "Weighted exit"} & columns:
+        missing.add("Exit or Weighted exit")
     if missing:
         raise ImportProblem("This must be an individual-trades CSV. Missing columns: " + ", ".join(sorted(missing)))
     try:
@@ -201,6 +290,9 @@ def read_payload(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=No
     if context and (symbol, timeframe) != context.groups():
         raise ImportProblem("The HTML pair/timeframe does not match this CSV.")
     strategy_name = canonical_strategy_name(overrides.get("strategy_name") or infer_strategy(report.heading, rows, csv_name))
+    partial_mode = "Weighted exit" in columns or bool(re.match(r"^ts\b", report.heading, re.I))
+    if partial_mode and not overrides.get("strategy_name") and not strategy_name.lower().startswith("ts "):
+        strategy_name = "ts " + strategy_name
     version = overrides.get("strategy_version") or settings.get("Calculator version", "Not recorded")
     warnings = []
     entry_rule = settings.get("Entry rule", "")
@@ -251,7 +343,7 @@ def read_payload(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=No
     patterns = pattern_types(direction_text) or sorted({p for row in rows for p in pattern_types(row.get("Strategy", ""))})
     trades, seen = [], set()
     decimal_columns = {
-        "entry_price": ("Entry", True), "exit_price": ("Exit", True), "initial_sl": ("SL", False),
+        "entry_price": ("Entry", True), "exit_price": ("Weighted exit" if "Weighted exit" in columns else "Exit", True), "initial_sl": ("SL", False),
         "final_sl": ("Final SL", False), "tp": ("TP", False), "lots": ("Lots", False),
         "gross_profit": ("Gross P/L", False), "commission": ("Commission", False),
         "net_profit": ("Net P/L", True), "reported_balance": ("Balance after exit", False),
@@ -277,7 +369,7 @@ def read_payload(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=No
                           point0_label=point0_label, point0_label_at=point0_label_at,
                           point0_label_source=point0_label_source,
                           entry_at=entry_at, exit_at=exit_at,
-                          signal_at=timestamp(row.get("Signal candle"), "signal date"),
+                          signal_at=timestamp(row.get("Signal candle") or row.get("Entry-trigger cross candle"), "signal date"),
                           touch_at=timestamp(row.get("Touch candle"), "touch date"),
                           exit_reason=row.get("Exit reason", ""),
                           sl_moved=row.get("SL moved to entry", "").lower() == "true",
@@ -287,6 +379,10 @@ def read_payload(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=No
             trades.append(trade)
         except (ImportProblem, ValueError) as exc:
             raise ImportProblem(f"CSV row {row_index}: {exc}") from exc
+    if report.partial_table_found:
+        attach_partial_exits(report, trades)
+    elif partial_mode and trades:
+        warnings.append("Individual half-exits are unavailable. Import the matching MT5 HTML to show each exit and its realised cash-flow dates; this CSV contains only the combined trade result.")
     if not html_bytes:
         warnings.append("CSV only: version, original test window and execution settings may be unavailable. Attach the matching HTML to preserve them.")
     if technique == "UNKNOWN":
@@ -310,7 +406,7 @@ def read_payload(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=No
     if expected_count is not None and expected_count != len(trades):
         raise ImportProblem("The HTML trade count does not match the CSV.")
     digest = hashlib.sha256(csv_bytes + b"\0" + html_bytes + b"\0" + json.dumps(overrides, sort_keys=True, default=str).encode()).hexdigest()
-    rules = {k: v for k, v in settings.items() if k in {"Pattern rule", "First-break rule", "After 0 breaks", "OUT 0 filter", "Candle event priority", "Position policy"}}
+    rules = {k: v for k, v in settings.items() if k in {"Pattern rule", "First-break rule", "After 0 breaks", "OUT 0 filter", "Candle event priority", "Position policy", "TS partial exits", "Two independent halves", "Original point 2", "Exit confirmation", "Breakeven"}}
     run_fields = dict(
         fingerprint=digest, symbol=symbol, timeframe=timeframe, currency=currency,
         requested_start=requested_start, requested_end=requested_end, actual_start=actual_start, actual_end=actual_end,

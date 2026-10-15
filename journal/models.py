@@ -1,5 +1,9 @@
 import uuid
+from datetime import datetime
+from decimal import Decimal
+from types import SimpleNamespace
 from django.db import models
+from django.utils.functional import cached_property
 
 ENTRY_TECHNIQUES = [
     ("EMA_TOUCH_NEXT_OPEN", "5 candle entry"),
@@ -125,3 +129,38 @@ class Trade(models.Model):
     @property
     def outcome(self):
         return "Won" if self.net_profit > 0 else "Lost" if self.net_profit < 0 else "Break even"
+
+    @property
+    def display_id(self):
+        return self.raw.get("Trade ID") or f"#{self.number}"
+
+    @property
+    def weighted_exit(self):
+        return "Weighted exit" in self.raw
+
+    @property
+    def source_fields(self):
+        return {key: value for key, value in self.raw.items() if not key.startswith("_")}
+
+    @cached_property
+    def exit_parts(self):
+        records = self.raw.get("_partial_exits", [])
+        if not isinstance(records, list):
+            return []
+        return [SimpleNamespace(
+            number=part["number"], exit_id=part["exit_id"] or f"{self.display_id}-X{part['number']}",
+            exit_at=datetime.fromisoformat(part["exit_at"]), reason=part["reason"],
+            **{key: Decimal(part[key]) for key in ("exit_price", "lots", "percent", "gross_profit", "commission", "net_profit", "reported_balance")},
+        ) for part in records]
+
+    @property
+    def cash_flows(self):
+        if not self.exit_parts:
+            return [(self.exit_at, self.net_profit)]
+        amounts = [(part.exit_at, part.net_profit) for part in self.exit_parts]
+        # The source rounds each half and each combined trade independently.
+        # Attribute any cent difference to the final close without changing
+        # either original reported value shown on the trade detail page.
+        adjustment = self.net_profit - sum((amount for _, amount in amounts), Decimal("0"))
+        amounts[-1] = (amounts[-1][0], amounts[-1][1] + adjustment)
+        return amounts

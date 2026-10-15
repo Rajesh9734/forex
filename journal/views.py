@@ -1,4 +1,5 @@
 import csv
+import json
 from collections import defaultdict
 from decimal import Decimal
 from pathlib import Path
@@ -200,9 +201,36 @@ def export_trades(request):
              t.run.max_wait_candles, t.pattern, t.number, t.side, date_string(t.signal_at), date_string(t.touch_at), date_string(t.entry_at), date_string(t.exit_at),
              t.entry_price, t.exit_price, t.initial_sl, t.final_sl, t.tp, t.lots, t.gross_profit, t.commission, t.net_profit,
              t.run.currency, t.outcome, t.exit_reason, t.sl_moved, t.both_touched,
-             t.point0_label or "NOT_RECORDED", date_string(t.point0_label_at), t.point0_label_source] for t in trades.iterator())
-    headers += ["Point_0_Label", "Point_0_Label_Candle", "Point_0_Label_Source"]
+             t.point0_label or "NOT_RECORDED", date_string(t.point0_label_at), t.point0_label_source,
+             t.display_id, t.weighted_exit, json.dumps(t.raw.get("_partial_exits", []), ensure_ascii=False)] for t in trades.iterator())
+    headers += ["Point_0_Label", "Point_0_Label_Candle", "Point_0_Label_Source", "Trade_ID", "Weighted_Exit", "Exit_Parts"]
     return csv_response("backtest-trades.csv", headers, rows)
+
+
+def export_exits(request):
+    form, _, trades, _ = selection(request.GET, request.GET.get("run") or None)
+    if not form.is_valid():
+        return HttpResponse("Correct the filters before exporting.", status=400)
+    trades = list(trades)
+    if any(trade.weighted_exit and not trade.exit_parts for trade in trades):
+        return HttpResponse("Individual exits are unavailable for a selected TS run. Import its matching HTML report first.", status=400)
+    headers = ["Run_ID", "Strategy", "Strategy_Version", "Pair", "Timeframe", "Trade_ID", "Exit_ID", "Side",
+               "Exit_Candle", "Exit_Price", "Closed_Lots", "Closed_Percent", "Reason", "Gross_PL", "Commission", "Net_PL", "Currency"]
+
+    def rows():
+        for trade in trades:
+            context = [str(trade.run_id), trade.run.strategy.name, trade.run.strategy.version,
+                       trade.run.symbol, trade.run.timeframe, trade.display_id]
+            if trade.exit_parts:
+                for part in trade.exit_parts:
+                    yield context + [part.exit_id, trade.side, date_string(part.exit_at), part.exit_price,
+                                     part.lots, part.percent, part.reason, part.gross_profit,
+                                     part.commission, part.net_profit, trade.run.currency]
+            else:
+                yield context + [f"{trade.display_id}-X1", trade.side, date_string(trade.exit_at), trade.exit_price,
+                                 trade.lots, 100, trade.exit_reason, trade.gross_profit, trade.commission,
+                                 trade.net_profit, trade.run.currency]
+    return csv_response("backtest-exits.csv", headers, rows())
 
 
 def source_download(request, pk, kind):

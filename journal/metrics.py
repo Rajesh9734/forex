@@ -11,13 +11,14 @@ def summarize(trades, initial_balance=None):
     lost = [-t.net_profit for t in rows if t.net_profit < 0]
     gained, losses = sum(won, ZERO), sum(lost, ZERO)
     net = gained - losses
-    # Imported reports round per-trade money to cents. Group same-candle exits
-    # before calculating balance drawdown, matching the source scripts.
+    # Count outcomes once per original trade, while realising each TS part
+    # on its own exit candle. Group same-candle cash flows for balance drawdown.
     balance = initial_balance if initial_balance is not None else ZERO
     peak, drawdown, drawdown_pct = balance, ZERO, ZERO
     curve = [(None, balance)]
-    for exit_at, group in groupby(sorted(rows, key=lambda t: (t.exit_at, t.number)), key=lambda t: t.exit_at):
-        balance += sum((t.net_profit for t in group), ZERO)
+    cash_flows = sorted((flow for trade in rows for flow in trade.cash_flows), key=lambda flow: flow[0])
+    for exit_at, group in groupby(cash_flows, key=lambda flow: flow[0]):
+        balance += sum((amount for _, amount in group), ZERO)
         peak = max(peak, balance)
         drawdown = max(drawdown, peak - balance)
         if initial_balance is not None and peak > 0:
@@ -43,9 +44,18 @@ def summarize(trades, initial_balance=None):
 
 def monthly_results(trades):
     groups = defaultdict(list)
+    cash = defaultdict(lambda: ZERO)
     for trade in trades:
         groups[trade.exit_at.strftime("%Y-%m")].append(trade)
-    return [{"month": month, **summarize(rows)} for month, rows in sorted(groups.items())]
+        for exit_at, amount in trade.cash_flows:
+            cash[exit_at.strftime("%Y-%m")] += amount
+    results = []
+    for month in sorted(set(groups) | set(cash)):
+        closed = groups[month]
+        wins = sum(trade.net_profit > 0 for trade in closed)
+        results.append({"month": month, "net": cash[month], "total": len(closed),
+                        "win_rate": Decimal(wins) * 100 / len(closed) if closed else ZERO})
+    return results
 
 
 def chart_points(curve, width=1000, height=240):

@@ -12,4 +12,5 @@ urlpatterns = [
     path("runs/<uuid:pk>/source/<str:kind>/", views.source_download, name="source_download"),
     path("export/summary.csv", views.export_summary, name="export_summary"),
     path("export/trades.csv", views.export_trades, name="export_trades"),
+    path("export/exits.csv", views.export_exits, name="export_exits"),
 ]

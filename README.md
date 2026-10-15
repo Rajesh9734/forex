@@ -53,6 +53,24 @@ Set `MT5_REPORTS_DIR` before starting the server to change the Common Files root
 The importer scans the supported strategy report folders, including cross-entry
 variants and 0 Break Immediate.
 The IN Up-Down cross-entry reports are read from `InUpDownCrossEntryBacktests`.
+The seven corresponding `TS...Backtests` folders are also scanned. TS strategies
+remain separate from their originals. Import the main trades CSV and its matching
+HTML; the `_exits.csv` companion is not an individual-trades input.
+
+TS reports use `Weighted exit` for the combined exit price. Their matching HTML
+contains each actual half-exit, including price, candle, lots, percent, reason and
+P/L. These validated records are stored with the trade's JSON source data, so no
+database schema migration is required. The original HTML remains archived.
+Trade IDs and exit IDs are shown in the ledger, trade details and exports. Older
+reports that lack explicit IDs keep their original numeric trade reference.
+
+The run export menu includes **Individual exits CSV**. Win rates count each
+original trade once. Balance and monthly profit realise each part on its exit
+candle; monthly trade counts use the original position's final-close month.
+Per-part and combined CSV amounts are rounded independently. Any cent difference
+is allocated to the final cash flow for totals, preserving the reported values
+in the individual-exit table. CSV-only TS imports explicitly flag missing exit
+parts and cannot export guessed individual exits.
 
 ## Compare and export
 
