@@ -26,6 +26,9 @@ def summarize(trades, initial_balance=None):
     return {
         "total": len(rows), "wins": len(won), "losses": len(lost),
         "breakeven": len(rows) - len(won) - len(lost),
+        "point0_labels": sorted({t.point0_label or "NOT_RECORDED" for t in rows}),
+        "labelled_trades": sum(bool(t.point0_label) for t in rows),
+        "missing_labels": sum(not t.point0_label for t in rows),
         "longs": sum(t.side == "BUY" for t in rows), "shorts": sum(t.side == "SELL" for t in rows),
         "win_rate": Decimal(len(won)) * 100 / len(rows) if rows else ZERO,
         "gained": gained, "lost": losses, "net": net,

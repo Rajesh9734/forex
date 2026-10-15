@@ -9,6 +9,7 @@ ENTRY_TECHNIQUES = [
     ("UNKNOWN", "Not recorded"),
 ]
 PATTERNS = [(x, x.replace("_", " ")) for x in ("OUT_UP", "OUT_DOWN", "IN_UP", "IN_DOWN")]
+POINT0_LABELS = [(x, x) for x in ("LLP", "HHP", "LLF", "HLF", "LHF", "HHF")] + [("UNRESOLVED", "Unresolved at pattern confirmation")]
 DIRECTIONS = [("LONG", "Long"), ("SHORT", "Short"), ("BOTH", "Both"), ("UNKNOWN", "Not recorded")]
 
 
@@ -80,6 +81,9 @@ class Trade(models.Model):
     number = models.PositiveIntegerField()
     side = models.CharField(max_length=5, choices=[("BUY", "Long"), ("SELL", "Short")], db_index=True)
     pattern = models.CharField(max_length=16, blank=True, db_index=True)
+    point0_label = models.CharField(max_length=16, choices=POINT0_LABELS, blank=True, default="", db_index=True)
+    point0_label_at = models.DateTimeField(null=True, blank=True)
+    point0_label_source = models.CharField(max_length=24, blank=True, default="")
     signal_at = models.DateTimeField(null=True, blank=True)
     touch_at = models.DateTimeField(null=True, blank=True)
     entry_at = models.DateTimeField(db_index=True)

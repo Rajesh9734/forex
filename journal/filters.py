@@ -1,6 +1,6 @@
 from django import forms
 from django.db.models import Q
-from .models import BacktestRun, ENTRY_TECHNIQUES, PATTERNS, Trade
+from .models import BacktestRun, ENTRY_TECHNIQUES, PATTERNS, POINT0_LABELS, Trade
 
 
 class FilterForm(forms.Form):
@@ -10,6 +10,7 @@ class FilterForm(forms.Form):
     timeframe = forms.ChoiceField(required=False, label="Timeframe")
     entry = forms.ChoiceField(required=False, label="Entry technique", choices=[("", "All entry techniques")] + ENTRY_TECHNIQUES)
     pattern = forms.ChoiceField(required=False, label="Pattern", choices=[("", "All patterns")] + PATTERNS)
+    point0_label = forms.ChoiceField(required=False, label="Point 0 label", choices=[("", "All labels")] + POINT0_LABELS + [("NOT_RECORDED", "Not recorded")])
     direction = forms.ChoiceField(required=False, label="Trade direction", choices=[("", "All directions"), ("LONG", "Long trades"), ("SHORT", "Short trades"), ("BOTH", "Runs with both sides enabled")])
     cross = forms.ChoiceField(required=False, label="Cross direction", choices=[("", "All crosses"), ("UPCROSS", "Upcross"), ("DOWNCROSS", "Downcross"), ("BOTH", "Runs using both crosses")])
     wait = forms.IntegerField(required=False, min_value=1, max_value=10000, label="Max wait candles")
@@ -54,6 +55,8 @@ def selection(params, run_id=None):
         trades = trades.filter(Q(run__cross_direction=data["cross"]) | Q(run__cross_direction="BOTH", side=side))
     if data.get("pattern"):
         trades = trades.filter(pattern=data["pattern"])
+    if data.get("point0_label"):
+        trades = trades.filter(point0_label="" if data["point0_label"] == "NOT_RECORDED" else data["point0_label"])
     if data.get("from_date"):
         trades = trades.filter(exit_at__date__gte=data["from_date"])
     if data.get("to_date"):
@@ -61,7 +64,7 @@ def selection(params, run_id=None):
     if data.get("outcome"):
         lookup = {"won": "net_profit__gt", "lost": "net_profit__lt", "flat": "net_profit"}[data["outcome"]]
         trades = trades.filter(**{lookup: 0})
-    scoped = any(data.get(k) for k in ("pattern", "from_date", "to_date", "outcome")) or data.get("direction") in ("LONG", "SHORT") or data.get("cross") in ("UPCROSS", "DOWNCROSS")
+    scoped = any(data.get(k) for k in ("pattern", "point0_label", "from_date", "to_date", "outcome")) or data.get("direction") in ("LONG", "SHORT") or data.get("cross") in ("UPCROSS", "DOWNCROSS")
     if scoped:
         runs = runs.filter(pk__in=trades.values("run_id"))
     return form, runs, trades, scoped

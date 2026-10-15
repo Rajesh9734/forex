@@ -8,6 +8,7 @@
   <article class="stat-card"><div class="stat-label">Selected runs <span>▦</span></div><div class="stat-value">{{ run_count }}<small>/ {{ total_saved }}</small></div><p>{% if scoped %}Metrics reflect matching trades{% else %}Each run keeps its original settings{% endif %}</p></article>
 </section>
 {% include 'journal/_filters.html' %}
+{% if stats.missing_labels %}<div class="notice info">Point 0 labels are missing for {{ stats.missing_labels }} matching trades. New MT5 exports record them explicitly. <a class="text-link" href="?{% querystring point0_label='NOT_RECORDED' %}">Show trades without labels ↗</a></div>{% endif %}
 {% if currencies|length > 1 %}<div class="currency-strip">{% for group in currencies %}<span>{{ group.currency }} <strong class="{{ group.net|tone }}">{{ group.net|signed }}</strong></span>{% endfor %}</div>{% endif %}
 <section class="panel">
   <div class="panel-heading"><div><h2>Backtest runs <span class="count-badge">{{ run_count }}</span></h2><p>{% if scoped %}Showing matching trades within each saved run.{% else %}Original test windows and results, grouped by run.{% endif %}</p></div><label class="sort-control">Sort by <select data-sort><option value="recent" {% if sort == 'recent' %}selected{% endif %}>Recently imported</option><option value="win_rate" {% if sort == 'win_rate' %}selected{% endif %}>Win rate</option><option value="net" {% if sort == 'net' %}selected{% endif %}>Net profit by currency</option><option value="trades" {% if sort == 'trades' %}selected{% endif %}>Trade count</option></select></label></div>

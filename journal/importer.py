@@ -12,10 +12,12 @@ from pathlib import Path
 from django.core.files.base import ContentFile
 from django.db import IntegrityError, transaction
 
-from .models import BacktestRun, StrategyVersion, Trade
+from .models import BacktestRun, POINT0_LABELS, StrategyVersion, Trade
 
 MAX_REPORT_BYTES = 20 * 1024 * 1024
-REPORT_FOLDERS = ("ZeroOutBacktests", "GoldLLPUpSortBacktests", "OutDownCandleBacktests")
+REPORT_FOLDERS = ("ZeroOutBacktests", "GoldLLPUpSortBacktests", "OutDownCandleBacktests",
+                  "ZeroOutCrossEntryBacktests", "GoldLLPCrossEntryBacktests", "OutDownCrossEntryBacktests",
+                  "ZeroBreakImmediateBacktests")
 
 
 class ImportProblem(ValueError):
@@ -109,8 +111,34 @@ def pattern_types(value):
     return sorted({f"{kind.upper()}_{direction.upper()}" for kind, direction in re.findall(r"\b(OUT|IN)[ _-]+(UP|DOWN)\b", value or "", re.I)})
 
 
+def point0_details(row):
+    """Read an explicitly exported label. Never derive it from a strategy name."""
+    allowed = {code for code, _ in POINT0_LABELS}
+    label = (row.get("Point 0 label") or row.get("OUT 0 code") or "").strip().upper()
+    source = "CSV_COLUMN" if label else ""
+    setup = " | ".join(value for key, value in row.items() if key.startswith("OUT 0 / ") or key.startswith("OUT 0 LLP / "))
+    matches = set(re.findall(r"\bOUT\s+0\s+(?:code|label)\s*:\s*(LLP|HHP|LLF|HLF|LHF|HHF|UNRESOLVED)\b", setup, re.I))
+    matches.update(re.findall(r"\bOUT\s+0\s+(LLP|HHP|LLF|HLF|LHF|HHF)\s*:", setup, re.I))
+    matches = {code.upper() for code in matches}
+    if len(matches) > 1 or (label and matches and matches != {label}):
+        raise ImportProblem("Conflicting point 0 labels in the CSV.")
+    if not label and matches:
+        label, source = matches.pop(), "LEGACY_SETUP"
+    if label and label not in allowed:
+        raise ImportProblem(f"Unknown point 0 label: {label}.")
+    label_time = row.get("Point 0 label candle", "")
+    if not label_time:
+        match = re.search(r"\bOUT\s+0\s+label candle:\s*(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2})", setup, re.I)
+        label_time = match.group(1) if match else ""
+    return label, timestamp(label_time, "point 0 label candle") if label_time else None, source
+
+
 def infer_strategy(heading, rows, source_name):
     candidate = " ".join([heading, source_name] + [row.get("Strategy", "") for row in rows[:10]])
+    if re.search(r"0\s*break\s*immediate|zerobreakimmediate", candidate, re.I):
+        return "0 Break Immediate"
+    if re.search(r"\bout[ _-]+down[-/]up\b", heading, re.I):
+        return "Out Down-Up"
     if re.search(r"gold|llp", candidate, re.I):
         return "Gold LLP Up Sort"
     if re.search(r"\b0\s*(?:out|break)\b|zeroout", candidate, re.I):
@@ -166,9 +194,10 @@ def read_payload(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=No
     entry_rule = settings.get("Entry rule", "")
     lower_rule = entry_rule.lower()
     technique = "UNKNOWN"
-    if "touch" in lower_rule and "next candle open" in lower_rule:
+    next_open = bool(re.search(r"next(?:\s+available)?\s+candle(?:'s)?\s+open", lower_rule))
+    if "touch" in lower_rule and next_open:
         technique = "EMA_TOUCH_NEXT_OPEN"
-    elif "next candle open" in lower_rule:
+    elif next_open:
         technique = "CROSS_NEXT_OPEN"
     elif "touch" in lower_rule and "close" in lower_rule:
         technique = "EMA_TOUCH_CLOSE"
@@ -229,7 +258,12 @@ def read_payload(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=No
             if exit_at < entry_at:
                 raise ImportProblem("Exit date is before entry date.")
             pattern = pattern_types(row.get("Strategy", ""))
+            point0_label, point0_label_at, point0_label_source = point0_details(row)
+            if point0_label_at and point0_label_at > entry_at:
+                raise ImportProblem("Point 0 label candle is after entry; it cannot describe a label known before this trade.")
             trade = Trade(number=trade_number, side=side, pattern=pattern[0] if len(pattern) == 1 else "",
+                          point0_label=point0_label, point0_label_at=point0_label_at,
+                          point0_label_source=point0_label_source,
                           entry_at=entry_at, exit_at=exit_at,
                           signal_at=timestamp(row.get("Signal candle"), "signal date"),
                           touch_at=timestamp(row.get("Touch candle"), "touch date"),
@@ -249,6 +283,9 @@ def read_payload(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=No
         warnings.append("Starting balance is unavailable. Return and balance drawdown percentages cannot be calculated.")
     if not requested_start or not requested_end:
         warnings.append("Original requested window is unavailable. Trade dates do not establish the tested data coverage.")
+    missing_labels = sum(not trade.point0_label for trade in trades)
+    if missing_labels:
+        warnings.append(f"Point 0 label was not recorded for {missing_labels} trades. Rerun the updated MT5 script and import its new reports to fill those labels.")
     expected_net = report_number(settings.get("Net profit", ""))
     calculated_net = sum((trade.net_profit for trade in trades), Decimal("0"))
     tolerance = Decimal("0.02") + Decimal("0.005") * len(trades)

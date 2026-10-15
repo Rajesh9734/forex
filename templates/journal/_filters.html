@@ -7,11 +7,12 @@
     <label>{{ filter_form.symbol.label }}{{ filter_form.symbol }}</label>
     <label>{{ filter_form.timeframe.label }}{{ filter_form.timeframe }}</label>
     <label>{{ filter_form.entry.label }}{{ filter_form.entry }}</label>
+    <label>{{ filter_form.point0_label.label }}{{ filter_form.point0_label }}</label>
   </div>
   <details class="advanced-filters" {% if request.GET.pattern or request.GET.direction or request.GET.cross or request.GET.wait or request.GET.version or request.GET.from_date or request.GET.to_date or request.GET.outcome or request.GET.currency %}open{% endif %}>
     <summary>More filters <span>Pattern, direction, dates & settings</span></summary>
     <div class="filter-grid advanced-grid">
-      {% for field in filter_form %}{% if field.name != 'strategy' and field.name != 'symbol' and field.name != 'timeframe' and field.name != 'entry' %}<label>{{ field.label }}{{ field }}</label>{% endif %}{% endfor %}
+      {% for field in filter_form %}{% if field.name != 'strategy' and field.name != 'symbol' and field.name != 'timeframe' and field.name != 'entry' and field.name != 'point0_label' %}<label>{{ field.label }}{{ field }}</label>{% endif %}{% endfor %}
     </div>
     <p class="helper">Exit dates are inclusive and select realised trades from saved runs. They do not rerun the strategy.</p>
   </details>

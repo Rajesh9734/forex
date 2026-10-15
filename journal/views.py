@@ -170,7 +170,9 @@ def export_summary(request):
             s["drawdown"] if not scoped else None, s["drawdown_pct"].quantize(Decimal(".01")) if s["drawdown_pct"] is not None else None,
             "FILTERED_TRADES" if scoped else "FULL_RUN", request.GET.get("from_date", ""), request.GET.get("to_date", ""),
             request.GET.get("pattern", ""), request.GET.get("direction", ""), request.GET.get("cross", ""), request.GET.get("outcome", ""), run.csv_sha256,
+            "+".join(s["point0_labels"]), request.GET.get("point0_label", ""), s["labelled_trades"], s["missing_labels"],
         ])
+    headers += ["Point_0_Labels", "Filter_Point_0_Label", "Trades_With_Point_0_Label", "Trades_Missing_Point_0_Label"]
     return csv_response("backtest-summary.csv", headers, output)
 
 
@@ -182,7 +184,9 @@ def export_trades(request):
     rows = ([str(t.run_id), t.run.strategy.name, t.run.strategy.version, t.run.symbol, t.run.timeframe, t.run.entry_technique,
              t.run.max_wait_candles, t.pattern, t.number, t.side, date_string(t.signal_at), date_string(t.touch_at), date_string(t.entry_at), date_string(t.exit_at),
              t.entry_price, t.exit_price, t.initial_sl, t.final_sl, t.tp, t.lots, t.gross_profit, t.commission, t.net_profit,
-             t.run.currency, t.outcome, t.exit_reason, t.sl_moved, t.both_touched] for t in trades.iterator())
+             t.run.currency, t.outcome, t.exit_reason, t.sl_moved, t.both_touched,
+             t.point0_label or "NOT_RECORDED", date_string(t.point0_label_at), t.point0_label_source] for t in trades.iterator())
+    headers += ["Point_0_Label", "Point_0_Label_Candle", "Point_0_Label_Source"]
     return csv_response("backtest-trades.csv", headers, rows)
 
 

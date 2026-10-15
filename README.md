@@ -47,7 +47,8 @@ Command-line imports:
 ```
 
 Set `MT5_REPORTS_DIR` before starting the server to change the Common Files root.
-The importer only scans the three named report folders.
+The importer scans the supported strategy report folders, including cross-entry
+variants and 0 Break Immediate.
 
 ## Compare and export
 
@@ -69,6 +70,21 @@ drawdown are omitted for filtered subsets. The requested test end is exclusive;
 the actual last candle is reported separately.
 
 ## Definitions and limits
+
+- **Point 0 label:** LLP, HHP, LLF, HLF, LHF or HHF is stored per trade. The main
+  filter row selects these independently of OUT UP/DOWN and long/short direction.
+  Metrics and both CSV exports use the same label-filtered trades.
+- Updated MT5 exports include `Point 0 label` and `Point 0 label candle`, frozen
+  when point 3 completes the pattern. `UNRESOLVED` means no label was known then;
+  this differs from `Not recorded`, which means the old report omitted the label.
+- Legacy reports are enriched only when their saved setup explicitly records
+  the label (for example `OUT 0 code: LLP`). Strategy names are not used to guess
+  labels. Fill unrecorded historical labels by rerunning the updated MT5 script
+  and importing its new reports. To recover explicit labels in stored reports:
+
+  ```powershell
+  .\.venv\Scripts\python.exe manage.py backfill_point_labels
+  ```
 
 - A win has net P/L > 0, a loss < 0, and break-even exactly 0, after commission.
   Win rate is wins / all closed trades, including break-even. Combined win rates
