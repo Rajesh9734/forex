@@ -360,11 +360,48 @@ def import_reports(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=
         raise
 
 
+def _report_market(csv_path):
+    """Read the market from report contents, including zero-trade exports."""
+    try:
+        text = decode_report(csv_path.read_bytes())
+        try:
+            dialect = csv.Sniffer().sniff(text[:8192], delimiters=",;\t")
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.DictReader(io.StringIO(text, newline=""), dialect=dialect)
+        row = next((row for row in reader if any(row.values())), {})
+        symbol = (row.get("Symbol") or "").strip()
+        timeframe = (row.get("Timeframe") or "").strip()
+        if symbol and timeframe:
+            return symbol, timeframe
+
+        report = ReportHTML()
+        report.feed(decode_report(csv_path.with_suffix(".html").read_bytes()))
+        context = re.search(r"Candle backtest\s*[-–]\s*(\S+)\s+(M\d+|H\d+|D1|W1|MN1)\b", " ".join(report.text))
+        if context:
+            return context.groups()
+    except (ImportProblem, OSError, csv.Error):
+        # Leave unreadable reports in the import queue so their errors are shown.
+        pass
+    return None
+
+
 def discover_reports(root, latest=False):
     paths = []
     for folder in REPORT_FOLDERS:
         directory = Path(root) / folder
         if directory.is_dir():
-            found = sorted((p for p in directory.glob("*.csv") if p.with_suffix(".html").is_file()), key=lambda p: p.stat().st_mtime, reverse=True)
-            paths.extend(found[:1] if latest else found)
+            found = sorted((p for p in directory.glob("*.csv") if p.with_suffix(".html").is_file()), key=lambda p: (p.stat().st_mtime_ns, p.name), reverse=True)
+            if not latest:
+                paths.extend(found)
+                continue
+            seen_markets = set()
+            for path in found:
+                market = _report_market(path)
+                if market is None:
+                    paths.append(path)
+                elif market not in seen_markets:
+                    # Each folder identifies a strategy and its entry variant.
+                    seen_markets.add(market)
+                    paths.append(path)
     return paths

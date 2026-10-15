@@ -24,9 +24,12 @@ py -3 -m venv .venv
 Open **Import reports** and either:
 
 - Select a trade-level MT5 CSV and the HTML with the same filename.
-- Click **Import latest reports** to read the newest report from each existing
-  `ZeroOutBacktests`, `GoldLLPUpSortBacktests`, and `OutDownCandleBacktests` folder
-  under MT5's Common Files directory.
+- Click **Import latest reports** to read the newest report for each pair and
+  timeframe in every supported strategy/entry folder under MT5's Common Files
+  directory. For example, AUDUSD M15 and GBPUSD M15 are imported separately.
+  The market is read from report contents, including zero-trade reports; the
+  newest export is selected by file modification time. Existing saved runs remain
+  in the database, and exact duplicates are skipped.
 
 The application reads existing reports. It does not run a backtest, place a
 trade, or alter MT5 files. Original CSV/HTML bytes are copied into local storage.

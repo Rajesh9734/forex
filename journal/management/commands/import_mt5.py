@@ -9,7 +9,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("paths", nargs="*", type=Path)
-        parser.add_argument("--latest", action="store_true", help="Latest CSV in each known strategy folder")
+        parser.add_argument("--latest", action="store_true", help="Latest report per pair and timeframe in each strategy/entry folder")
         parser.add_argument("--all", action="store_true", help="All existing reports")
 
     def handle(self, *args, **options):
