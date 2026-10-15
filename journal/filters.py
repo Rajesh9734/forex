@@ -20,6 +20,15 @@ class FilterForm(forms.Form):
     currency = forms.ChoiceField(required=False, label="Currency")
 
     def __init__(self, *args, **kwargs):
+        # Keep older saved filter URLs usable after consolidating the name.
+        data = args[0] if args else kwargs.get("data")
+        if data and data.get("strategy") == "Out Down":
+            renamed = data.copy()
+            renamed["strategy"] = "Out Down-Up"
+            if args:
+                args = (renamed, *args[1:])
+            else:
+                kwargs["data"] = renamed
         super().__init__(*args, **kwargs)
         for field, lookup in [("strategy", "strategy__name"), ("version", "strategy__version"), ("symbol", "symbol"), ("timeframe", "timeframe"), ("currency", "currency")]:
             values = BacktestRun.objects.order_by(lookup).values_list(lookup, flat=True).distinct()

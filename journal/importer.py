@@ -144,8 +144,15 @@ def infer_strategy(heading, rows, source_name):
     if re.search(r"\b0\s*(?:out|break)\b|zeroout", candidate, re.I):
         return "0 Break"
     if re.search(r"out[ _-]*down|out[ _-]*up", candidate, re.I):
-        return "Out Down"
+        return "Out Down-Up"
     return heading or "Imported strategy"
+
+
+def canonical_strategy_name(name):
+    value = name.strip()
+    if re.fullmatch(r"out\s+down(?:[-/]up)?", value, re.I):
+        return "Out Down-Up"
+    return value
 
 
 def read_payload(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=None):
@@ -188,7 +195,7 @@ def read_payload(csv_bytes, csv_name, html_bytes=b"", html_name="", overrides=No
         raise ImportProblem("A zero-trade CSV needs its matching HTML report to identify pair, timeframe and currency.")
     if context and (symbol, timeframe) != context.groups():
         raise ImportProblem("The HTML pair/timeframe does not match this CSV.")
-    strategy_name = overrides.get("strategy_name") or infer_strategy(report.heading, rows, csv_name)
+    strategy_name = canonical_strategy_name(overrides.get("strategy_name") or infer_strategy(report.heading, rows, csv_name))
     version = overrides.get("strategy_version") or settings.get("Calculator version", "Not recorded")
     warnings = []
     entry_rule = settings.get("Entry rule", "")

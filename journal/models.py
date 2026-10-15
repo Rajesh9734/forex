@@ -2,7 +2,7 @@ import uuid
 from django.db import models
 
 ENTRY_TECHNIQUES = [
-    ("EMA_TOUCH_NEXT_OPEN", "EMA touch → next open"),
+    ("EMA_TOUCH_NEXT_OPEN", "5 candle entry"),
     ("CROSS_NEXT_OPEN", "EMA cross → next open"),
     ("EMA_TOUCH_CLOSE", "EMA touch → candle close"),
     ("CROSS_CLOSE", "EMA cross → candle close"),

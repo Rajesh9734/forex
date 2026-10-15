@@ -52,6 +52,9 @@ variants and 0 Break Immediate.
 
 ## Compare and export
 
+- **Display names:** old Out Down reports are grouped under **Out Down-Up**.
+  `EMA_TOUCH_NEXT_OPEN` is displayed as **5 candle entry**; the stored entry code
+  and the recorded wait window stay attached to each run.
 - **Backtest runs:** filter by strategy/version, pair, timeframe, entry technique,
   wait window, pattern, long/short direction, cross direction, currency and exit dates.
 - **Trade ledger:** the same filters apply to individual trades; open a trade to
