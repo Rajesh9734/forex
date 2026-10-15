@@ -1,0 +1,25 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · Forex Backtest</title>
+  <link rel="stylesheet" href="{% static 'journal/app.css' %}">
+</head>
+<body class="login-page">
+  <main class="login-card panel">
+    <div class="eyebrow">FOREX BACKTEST</div>
+    <h1>Sign in<span class="heading-dot">.</span></h1>
+    <p class="helper">Your backtest workspace.</p>
+    <form method="post" class="login-form">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <label>Username {{ form.username }}{{ form.username.errors }}</label>
+      <label>Password {{ form.password }}{{ form.password.errors }}</label>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button class="button full-width" type="submit">Sign in</button>
+    </form>
+  </main>
+</body>
+</html>

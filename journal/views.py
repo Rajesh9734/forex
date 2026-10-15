@@ -5,7 +5,9 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth.decorators import login_not_required
 from django.core.paginator import Paginator
+from django.db import DatabaseError, connection
 from django.db.models import Count
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -16,6 +18,16 @@ from .forms import ImportForm
 from .importer import ImportProblem, discover_reports, import_reports
 from .metrics import chart_points, monthly_results, summarize
 from .models import BacktestRun, StrategyVersion, Trade
+
+
+@login_not_required
+def health(request):
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+    except DatabaseError:
+        return HttpResponse("Unavailable", status=503, content_type="text/plain")
+    return HttpResponse("OK", content_type="text/plain")
 
 
 def grouped_selection(request, run_id=None):
@@ -102,11 +114,14 @@ def import_page(request):
             return redirect("run_detail", pk=run.id)
         except ImportProblem as exc:
             form.add_error(None, str(exc))
-    return render(request, "journal/import.html", {"section": "import", "form": form, "detected_count": len(discover_reports(settings.MT5_REPORTS_DIR, latest=True))})
+    detected_count = len(discover_reports(settings.MT5_REPORTS_DIR, latest=True)) if settings.LOCAL_REPORT_IMPORT_ENABLED else 0
+    return render(request, "journal/import.html", {"section": "import", "form": form, "detected_count": detected_count})
 
 
 @require_POST
 def import_latest(request):
+    if not settings.LOCAL_REPORT_IMPORT_ENABLED:
+        raise Http404("Local MT5 report folders are available only on your computer.")
     created, existing, errors = 0, 0, []
     for csv_path in discover_reports(settings.MT5_REPORTS_DIR, latest=True):
         html_path = csv_path.with_suffix(".html")

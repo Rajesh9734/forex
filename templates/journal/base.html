@@ -20,10 +20,10 @@
       <a class="nav-link {% if section == 'strategies' %}active{% endif %}" href="{% url 'strategies' %}"><span class="nav-icon">◇</span>Strategies</a>
       <a class="nav-link {% if section == 'import' %}active{% endif %}" href="{% url 'import' %}"><span class="nav-icon">↥</span>Import reports</a>
     </nav>
-    <div class="sidebar-bottom"><span class="status-dot"></span><div>Saved on this computer<small>Local SQLite database</small></div></div>
+    <div class="sidebar-bottom"><span class="status-dot"></span><div>{% if hosted_workspace %}Saved in your workspace<small>Hosted on Render</small>{% else %}Saved on this computer<small>Local SQLite database</small>{% endif %}</div></div>
   </aside>
   <div class="app-shell">
-    <header class="topbar"><div><span class="muted">Workspace</span><span class="crumb-slash">/</span>{% block breadcrumb %}Backtest runs{% endblock %}</div><span class="local-label"><span class="status-dot"></span> Local workspace</span></header>
+    <header class="topbar"><div><span class="muted">Workspace</span><span class="crumb-slash">/</span>{% block breadcrumb %}Backtest runs{% endblock %}</div><div class="workspace-tools"><span class="local-label"><span class="status-dot"></span> {% if hosted_workspace %}Private workspace{% else %}Local workspace{% endif %}</span>{% if user.is_authenticated %}<form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="button ghost small" type="submit">Sign out</button></form>{% endif %}</div></header>
     <main id="main">
       {% for message in messages %}<div class="notice {{ message.tags }}" role="status">{{ message }}</div>{% endfor %}
       {% block content %}{% endblock %}
