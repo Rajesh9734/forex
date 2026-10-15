@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django import forms
-from .models import ENTRY_TECHNIQUES
+from .models import CURRENT_ENTRY_TECHNIQUES
 
 
 class ImportForm(forms.Form):
@@ -8,7 +8,7 @@ class ImportForm(forms.Form):
     html_file = forms.FileField(label="Matching HTML report", required=False, widget=forms.ClearableFileInput(attrs={"accept": ".html,.htm"}), help_text="Recommended. Captures version, test dates, starting balance and rules.")
     strategy_name = forms.CharField(max_length=160, required=False, label="Strategy name", help_text="Leave blank to read it from the report.")
     strategy_version = forms.CharField(max_length=40, required=False, label="Version")
-    entry_technique = forms.ChoiceField(required=False, choices=[("", "Read from report")] + ENTRY_TECHNIQUES)
+    entry_technique = forms.ChoiceField(required=False, choices=[("", "Read from report")] + CURRENT_ENTRY_TECHNIQUES)
     cross_direction = forms.ChoiceField(required=False, label="Cross direction", choices=[("", "Read from report"), ("UPCROSS", "Upcross"), ("DOWNCROSS", "Downcross"), ("BOTH", "Both"), ("UNKNOWN", "Not recorded")])
     max_wait_candles = forms.IntegerField(required=False, min_value=1, max_value=10000, label="Maximum wait candles")
     initial_balance = forms.DecimalField(required=False, min_value=Decimal("0.01"), max_digits=24, decimal_places=2, label="Starting balance")

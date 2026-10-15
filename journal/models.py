@@ -8,6 +8,12 @@ ENTRY_TECHNIQUES = [
     ("CROSS_CLOSE", "EMA cross → candle close"),
     ("UNKNOWN", "Not recorded"),
 ]
+# Retain historical codes for reading imported reports, while offering only
+# current methods in the dashboard and import dropdowns.
+CURRENT_ENTRY_TECHNIQUES = [
+    choice for choice in ENTRY_TECHNIQUES
+    if choice[0] in {"EMA_TOUCH_NEXT_OPEN", "CROSS_NEXT_OPEN", "UNKNOWN"}
+]
 PATTERNS = [(x, x.replace("_", " ")) for x in ("OUT_UP", "OUT_DOWN", "IN_UP", "IN_DOWN")]
 POINT0_LABELS = [(x, x) for x in ("LLP", "HHP", "LLF", "HLF", "LHF", "HHF")] + [("UNRESOLVED", "Unresolved at pattern confirmation")]
 DIRECTIONS = [("LONG", "Long"), ("SHORT", "Short"), ("BOTH", "Both"), ("UNKNOWN", "Not recorded")]

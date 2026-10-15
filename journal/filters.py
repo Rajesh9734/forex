@@ -1,6 +1,6 @@
 from django import forms
 from django.db.models import Q
-from .models import BacktestRun, ENTRY_TECHNIQUES, PATTERNS, POINT0_LABELS, Trade
+from .models import BacktestRun, CURRENT_ENTRY_TECHNIQUES, PATTERNS, POINT0_LABELS, Trade
 
 
 class FilterForm(forms.Form):
@@ -8,7 +8,7 @@ class FilterForm(forms.Form):
     version = forms.ChoiceField(required=False, label="Version")
     symbol = forms.ChoiceField(required=False, label="Pair / symbol")
     timeframe = forms.ChoiceField(required=False, label="Timeframe")
-    entry = forms.ChoiceField(required=False, label="Entry technique", choices=[("", "All entry techniques")] + ENTRY_TECHNIQUES)
+    entry = forms.ChoiceField(required=False, label="Entry technique", choices=[("", "All entry techniques")] + CURRENT_ENTRY_TECHNIQUES)
     pattern = forms.ChoiceField(required=False, label="Pattern", choices=[("", "All patterns")] + PATTERNS)
     point0_label = forms.ChoiceField(required=False, label="Point 0 label", choices=[("", "All labels")] + POINT0_LABELS + [("NOT_RECORDED", "Not recorded")])
     direction = forms.ChoiceField(required=False, label="Trade direction", choices=[("", "All directions"), ("LONG", "Long trades"), ("SHORT", "Short trades"), ("BOTH", "Runs with both sides enabled")])
@@ -22,9 +22,12 @@ class FilterForm(forms.Form):
     def __init__(self, *args, **kwargs):
         # Keep older saved filter URLs usable after consolidating the name.
         data = args[0] if args else kwargs.get("data")
-        if data and data.get("strategy") == "Out Down":
+        if data and (data.get("strategy") == "Out Down" or data.get("entry") in {"EMA_TOUCH_CLOSE", "CROSS_CLOSE"}):
             renamed = data.copy()
-            renamed["strategy"] = "Out Down-Up"
+            if data.get("strategy") == "Out Down":
+                renamed["strategy"] = "Out Down-Up"
+            if data.get("entry") in {"EMA_TOUCH_CLOSE", "CROSS_CLOSE"}:
+                renamed["entry"] = ""
             if args:
                 args = (renamed, *args[1:])
             else:
